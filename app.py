@@ -176,9 +176,13 @@ def controlled_five_alloy_table(full_df: pd.DataFrame) -> pd.DataFrame:
             mask &= np.isclose(full_df[e].astype(float).values, comp[e], atol=0.25)
         match = full_df.loc[mask]
         hv = float(match.iloc[0]["HV"]) if len(match) else np.nan
+        composition_label = " ".join(
+            f"{e}{int(comp[e])}" for e in ELEMENTS if comp[e] > 0
+        )
         rows.append(
             {
                 "Element omitted": omitted,
+                "Real dataset composition": composition_label,
                 "VEC": desc["VEC"],
                 "δ (%)": desc["delta"],
                 "Density (g/cm³)": desc["density"],
@@ -234,7 +238,12 @@ with st.sidebar:
 
 st.title("Interactive materials selection: hardness of high-entropy alloys")
 st.write(
-    "You will combine **materials-science reasoning**, a **machine-learning prediction**, and **experimental evidence** to make a material-selection decision."
+    "You will follow one scientific question at a time: first build a physical expectation from composition, "
+    "then identify the limit of the simple descriptors, then use ML for quantitative prediction, "
+    "then test ML against experiment, and finally make a material-selection decision."
+)
+st.caption(
+    "All controlled-comparison alloys and all 15 classroom candidates used in the activity are real samples from the experimental dataset; the model outputs are predictions."
 )
 progress_header(st.session_state.stage)
 
@@ -250,8 +259,13 @@ if st.session_state.stage == 1:
     )
 
     st.write(
-        "Compare two equiatomic five-element alloys. Each element present is **20 at.% = atomic fraction 0.20**. "
-        "The only change is **Cu → Al**. You will calculate the quantities step by step."
+        "We begin with **two real experimental samples from the 155-alloy dataset**. "
+        "Both are equiatomic five-element alloys: every element that is present is **20 at.% = atomic fraction 0.20**. "
+        "The controlled chemistry change is **Cu → Al**. You will calculate the descriptors step by step before seeing hardness."
+    )
+    st.info(
+        "Why only two samples here? This first step is for learning the calculation cleanly. "
+        "In Stage 2 you will immediately expand the comparison to five real controlled alloys."
     )
 
     st.subheader("1. Information you need")
@@ -282,6 +296,17 @@ if st.session_state.stage == 1:
     st.markdown(
         '<div class="warning-box"><strong>Worked method, not the answer:</strong> if an element is 20 at.%, use x = 0.20. For VEC, one term looks like 0.20 × VEC<sub>element</sub>. For r̄, one term looks like 0.20 × r<sub>element</sub>. Add the five terms that are present in the alloy.</div>',
         unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        r"""
+        **What each calculation is for**
+
+        - **VEC** gives a simple electronic-structure / phase-tendency descriptor.
+        - **Mean radius \\(\bar r\\)** is an intermediate quantity needed for \\(\delta\\).
+        - **Atomic-size mismatch \(\delta\)** measures how different the constituent atomic sizes are and therefore gives a simple indication of lattice mismatch/distortion.
+        - **None of these equations calculates hardness directly.** Their role is to build a physically informed expectation.
+        """
     )
 
     st.subheader("2. Calculate Alloy C")
@@ -356,7 +381,9 @@ elif st.session_state.stage == 2:
 
     table = controlled_five_alloy_table(full_df)
     st.write(
-        "Now compare five equiatomic five-element alloys. Every alloy has the same number of elements at the same fractions, so their ideal configurational entropy is identical."
+        "Now expand from the two hand-calculated examples to **five real experimental samples from the same dataset**. "
+        "Every alloy contains five elements at equal fractions; a different element is omitted in each case. "
+        "This makes the comparison unusually clean because composition changes while the number and fraction of components remain controlled."
     )
     st.dataframe(
         table.style.format({"VEC": "{:.2f}", "δ (%)": "{:.2f}", "Density (g/cm³)": "{:.2f}", "Experimental HV": "{:.0f}"}),
@@ -364,6 +391,20 @@ elif st.session_state.stage == 2:
         use_container_width=True,
     )
     st.info("Hardness spans roughly 155–536 HV even though configurational entropy is the same for all five alloys.")
+
+    st.markdown(
+        r"""
+        ### Read the table in three steps
+
+        **1. Configurational entropy:** all five alloys have the same ideal configurational entropy, yet their hardness is very different. So entropy alone cannot explain hardness.
+
+        **2. VEC:** the Al-free alloy has the highest VEC and the lowest hardness, while several lower-VEC alloys are much harder. This is a useful trend — but not a one-to-one rule.
+
+        **3. Atomic-size mismatch:** the Al-free alloy has a very small \\(\delta\\), while the Al-containing alloys have much larger \\(\delta\\). Again, this is physically informative, but alloys with nearly the same \\(\delta\\) still show different hardness values.
+
+        **Therefore the descriptors are doing something useful: they reveal physical trends. But they are not enough to calculate a unique hardness value.**
+        """
+    )
 
     conclusion = st.radio(
         "Which conclusion is best supported by these data?",
@@ -403,6 +444,19 @@ elif st.session_state.stage == 3:
     st.write(
         "The classroom Extra Trees model was trained on **140 experimental alloy compositions**. The 15 candidates below were held out from that training set. "
         "The model receives only Al, Co, Cr, Cu, Fe and Ni atomic percentages."
+    )
+    st.markdown(
+        r"""
+        **Why ML appears only now:**
+
+        In Stages 1–2 you established that composition-based descriptors such as VEC and \\(\delta\\) contain real physical information, but do not uniquely determine hardness. ML is therefore being used for a task the hand calculations cannot already solve:
+
+        \[
+        [Al,Co,Cr,Cu,Fe,Ni] \longrightarrow \widehat{HV}
+        \]
+
+        The ML output is a **prediction**, not an experimental fact.
+        """
     )
     m1, m2, m3 = st.columns(3)
     m1.metric("10-fold CV R²", "0.919")
@@ -512,6 +566,18 @@ elif st.session_state.stage == 5:
     st.subheader("How the selection quantities are calculated")
     st.write(
         "You do not need any hidden information. The elemental constants and equations used for density and the cost index are shown below."
+    )
+    st.markdown(
+        r"""
+        **What each final-selection quantity is doing**
+
+        - **Experimental hardness:** first checks whether the alloy actually satisfies the 450-HV requirement.
+        - **Density:** tells you about mass; in this particular dataset many Al-rich hard alloys are also relatively light, so density may reinforce rather than reverse the hardness ranking.
+        - **Specific hardness \\(HV/\rho\\):** shows hardness relative to density; treat it as a simple teaching comparison, not a universal materials index.
+        - **Relative cost:** creates the clearest competing design objective here. A harder alloy may not be worth a large increase in material cost.
+
+        The goal is therefore **not** to maximise every column at once. It is to make the trade-off explicit and defend a decision.
+        """
     )
     selection_constants = pd.DataFrame({
         "Element": ELEMENTS,
@@ -652,4 +718,3 @@ st.caption(
     "Scientific basis: Wen et al., Acta Materialia 170 (2019) 109–117, DOI 10.1016/j.actamat.2019.03.010. "
     "Independent hardness-ML study: Paturi et al., Crystals 15 (2025) 404, DOI 10.3390/cryst15050404."
 )
-
