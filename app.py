@@ -121,6 +121,8 @@ def initialise_state() -> None:
         "s4_complete": False,
         "s5_complete": False,
         "experimental_revealed": False,
+        "stage2_prediction_locked": False,
+        "stage2_prediction_order": [],
         "final_choice": None,
         "final_priority": None,
         "final_reason": "",
@@ -373,9 +375,9 @@ if st.session_state.stage == 1:
 # Stage 2
 # -----------------------------
 elif st.session_state.stage == 2:
-    st.markdown('<div class="stage-title">Stage 2 — Find the limit of the simple descriptors</div>', unsafe_allow_html=True)
+    st.markdown('<div class="stage-title">Stage 2 — Test the limits of the simple descriptors</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="aim-box"><strong>Aim:</strong> determine whether VEC, atomic-size mismatch or configurational entropy can uniquely determine hardness.</div>',
+        '<div class="aim-box"><strong>Aim:</strong> use VEC and atomic-size mismatch to make a physically informed prediction, then compare that prediction with real hardness data and identify where the simple descriptors stop being sufficient.</div>',
         unsafe_allow_html=True,
     )
 
@@ -383,49 +385,116 @@ elif st.session_state.stage == 2:
     st.write(
         "Now expand from the two hand-calculated examples to **five real experimental samples from the same dataset**. "
         "Every alloy contains five elements at equal fractions; a different element is omitted in each case. "
-        "This makes the comparison unusually clean because composition changes while the number and fraction of components remain controlled."
+        "Because the five alloys are all equiatomic, their ideal configurational entropy is the same."
     )
+
+    st.subheader("1. Make a prediction before seeing hardness")
+    st.write(
+        "For now, the experimental hardness values are deliberately hidden. Use only **VEC**, **δ**, and your materials-science reasoning. "
+        "Rank the five alloys from the one you expect to be **softest** to the one you expect to be **hardest**."
+    )
+
+    descriptor_view = table[["Element omitted", "Real dataset composition", "VEC", "δ (%)", "Density (g/cm³)"]].copy()
     st.dataframe(
-        table.style.format({"VEC": "{:.2f}", "δ (%)": "{:.2f}", "Density (g/cm³)": "{:.2f}", "Experimental HV": "{:.0f}"}),
+        descriptor_view.style.format({"VEC": "{:.2f}", "δ (%)": "{:.2f}", "Density (g/cm³)": "{:.2f}"}),
         hide_index=True,
         use_container_width=True,
     )
-    st.info("Hardness spans roughly 155–536 HV even though configurational entropy is the same for all five alloys.")
 
-    st.markdown(
-        r"""
-        ### Read the table in three steps
-
-        **1. Configurational entropy:** all five alloys have the same ideal configurational entropy, yet their hardness is very different. So entropy alone cannot explain hardness.
-
-        **2. VEC:** the Al-free alloy has the highest VEC and the lowest hardness, while several lower-VEC alloys are much harder. This is a useful trend — but not a one-to-one rule.
-
-        **3. Atomic-size mismatch:** the Al-free alloy has a very small \\(\delta\\), while the Al-containing alloys have much larger \\(\delta\\). Again, this is physically informative, but alloys with nearly the same \\(\delta\\) still show different hardness values.
-
-        **Therefore the descriptors are doing something useful: they reveal physical trends. But they are not enough to calculate a unique hardness value.**
-        """
+    st.caption(
+        "How to reason: lower VEC and larger δ may suggest greater resistance to plastic deformation in this alloy family, "
+        "but these are tendencies — not hardness equations."
     )
 
-    conclusion = st.radio(
-        "Which conclusion is best supported by these data?",
-        [
-            "Choose one…",
-            "Configurational entropy is sufficient to calculate hardness.",
-            "VEC and δ contain useful physical information, but neither uniquely determines hardness.",
-            "Atomic-size mismatch alone determines hardness.",
-        ],
-        key="stage2_conclusion",
-    )
-    if st.button("Check my conclusion", type="primary"):
-        if conclusion == "VEC and δ contain useful physical information, but neither uniquely determines hardness.":
-            st.session_state.s2_complete = True
-            st.success("Exactly. The descriptors capture broad physical trends, but the composition–hardness relationship remains multivariable.")
-        else:
-            st.error("Look again: alloys with similar δ still have different hardness, and configurational entropy is identical across the whole comparison.")
+    labels = table["Element omitted"].tolist()
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        r1 = st.selectbox("1 · Expected softest", ["Choose…"] + labels, key="rank1")
+    with c2:
+        r2 = st.selectbox("2", ["Choose…"] + labels, key="rank2")
+    with c3:
+        r3 = st.selectbox("3", ["Choose…"] + labels, key="rank3")
+    with c4:
+        r4 = st.selectbox("4", ["Choose…"] + labels, key="rank4")
+    with c5:
+        r5 = st.selectbox("5 · Expected hardest", ["Choose…"] + labels, key="rank5")
+
+    if not st.session_state.stage2_prediction_locked:
+        if st.button("Lock my prediction and reveal the experimental hardness", type="primary"):
+            order = [r1, r2, r3, r4, r5]
+            if "Choose…" in order:
+                st.error("Complete all five ranking positions before revealing the experimental results.")
+            elif len(set(order)) != 5:
+                st.error("Use each omitted-element alloy exactly once in your ranking.")
+            else:
+                st.session_state.stage2_prediction_order = order
+                st.session_state.stage2_prediction_locked = True
+                st.rerun()
+
+    if st.session_state.stage2_prediction_locked:
+        predicted = " → ".join(st.session_state.stage2_prediction_order)
+        actual_order = (
+            table.sort_values("Experimental HV")["Element omitted"].tolist()
+        )
+        actual = " → ".join(actual_order)
+
+        st.markdown(
+            f'<div class="warning-box"><strong>Your prediction, softest → hardest:</strong> {predicted}</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.subheader("2. Reveal the real experimental result")
+        st.dataframe(
+            table.style.format({"VEC": "{:.2f}", "δ (%)": "{:.2f}", "Density (g/cm³)": "{:.2f}", "Experimental HV": "{:.0f}"}),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.write(f"**Actual ranking, softest → hardest:** {actual}")
+
+        st.info(
+            "Hardness spans roughly 155–536 HV even though ideal configurational entropy is identical for all five alloys. "
+            "The broad VEC/δ trends are useful, but they do not uniquely determine the ranking."
+        )
+
+        st.markdown(
+            r"""
+            ### What should you notice?
+
+            **Configurational entropy:** all five alloys have the same ideal configurational entropy, yet their hardness is very different. Entropy alone cannot explain hardness.
+
+            **VEC:** the Al-free alloy has the highest VEC and the lowest hardness, while several lower-VEC alloys are much harder. This is a useful trend — but not a one-to-one rule.
+
+            **Atomic-size mismatch:** the Al-free alloy has a very small \(\delta\), while the Al-containing alloys have much larger \(\delta\). Again, this is physically informative, but alloys with nearly the same \(\delta\) still show different hardness values.
+
+            Therefore the descriptors are doing something useful: **they reveal physical trends. But they are not enough to calculate a unique hardness value.**
+            """
+        )
+
+        conclusion = st.radio(
+            "Which conclusion is best supported by this comparison?",
+            [
+                "Choose one…",
+                "Configurational entropy is sufficient to calculate hardness.",
+                "VEC and δ contain useful physical information, but neither uniquely determines hardness.",
+                "Atomic-size mismatch alone determines hardness.",
+            ],
+            key="stage2_conclusion",
+        )
+        if st.button("Check my Stage 2 conclusion", type="primary"):
+            if conclusion == "VEC and δ contain useful physical information, but neither uniquely determines hardness.":
+                st.session_state.s2_complete = True
+                st.success(
+                    "Exactly. Your hand calculations describe meaningful materials physics, but a multivariable composition–hardness mapping remains. "
+                    "That is the specific gap the ML model will address next."
+                )
+            else:
+                st.error(
+                    "Look again: alloys with similar δ still have different hardness, and configurational entropy is identical across the whole comparison."
+                )
 
     if st.session_state.s2_complete:
         st.markdown(
-            '<div class="takeaway"><strong>Stage 2 output:</strong> we have reached a genuine modelling gap. Simple descriptors help us understand the physics, but they do not provide a unique quantitative hardness prediction. This is where ML has a legitimate role.</div>',
+            '<div class="takeaway"><strong>Stage 2 output:</strong> you first committed to a physics-based prediction, then tested it against real measurements. Simple descriptors help us understand the trend, but they do not provide a unique quantitative hardness prediction. This is where ML has a legitimate role.</div>',
             unsafe_allow_html=True,
         )
     stage_nav(2)
@@ -473,6 +542,16 @@ elif st.session_state.stage == 3:
         use_container_width=True,
     )
 
+    trust = st.radio(
+        "Would you trust all ML-predicted passes equally?",
+        [
+            "Choose one…",
+            "Yes — if the model predicts a pass, the distance from the threshold does not matter.",
+            "No — predictions close to 450 HV are riskier because normal model error could move the real value below the requirement.",
+        ],
+        key="stage3_trust",
+    )
+
     passers = pred.loc[pred["ML HV"] >= HARDNESS_REQUIREMENT, "Candidate"].tolist()
     chosen = st.multiselect(
         "Select the TWO predicted passes that are closest to 450 HV and therefore deserve the most caution.",
@@ -480,16 +559,25 @@ elif st.session_state.stage == 3:
         key="borderline_selection",
         max_selections=2,
     )
-    if st.button("Check borderline predictions", type="primary"):
-        if set(chosen) == {"H", "I"}:
-            st.session_state.s3_complete = True
-            st.success("Correct. H and I are only about 20 HV above the requirement, which is smaller than a typical model error scale.")
+    if st.button("Check my Stage 3 reasoning", type="primary"):
+        trust_ok = trust.startswith("No —")
+        border_ok = set(chosen) == {"H", "I"}
+        if trust == "Choose one…":
+            st.error("First decide whether all predicted passes should be trusted equally.")
+        elif not trust_ok:
+            st.error("A prediction margin matters. A material predicted only slightly above the requirement is more vulnerable to normal prediction error.")
+        elif not border_ok:
+            st.error("Now identify the two ML predictions that sit only slightly above 450 HV.")
         else:
-            st.error("Choose the two ML predictions that sit only slightly above 450 HV.")
+            st.session_state.s3_complete = True
+            st.success(
+                "Correct. H and I are only about 20 HV above the requirement. Their margin is smaller than the model's typical MAE scale, "
+                "so they should be treated as risky predicted passes rather than as equally secure as candidates far above 450 HV."
+            )
 
     if st.session_state.s3_complete:
         st.markdown(
-            '<div class="takeaway"><strong>Stage 3 output:</strong> ML creates a quantitative feasibility screen, but H and I are borderline. A good engineer should treat them differently from candidates predicted hundreds of HV above the threshold.</div>',
+            '<div class="takeaway"><strong>Stage 3 output:</strong> ML creates a quantitative feasibility screen, but a pass/fail label is not enough. Prediction margin matters: H and I are borderline, while candidates far above 450 HV have a much larger decision margin.</div>',
             unsafe_allow_html=True,
         )
     stage_nav(3)
@@ -718,3 +806,4 @@ st.caption(
     "Scientific basis: Wen et al., Acta Materialia 170 (2019) 109–117, DOI 10.1016/j.actamat.2019.03.010. "
     "Independent hardness-ML study: Paturi et al., Crystals 15 (2025) 404, DOI 10.3390/cryst15050404."
 )
+
