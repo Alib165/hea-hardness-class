@@ -1,0 +1,35 @@
+GITHUB + STREAMLIT QUICK SETUP
+==============================
+
+1) Create an empty GitHub repository, for example:
+   hea-hardness-class
+
+2) On your computer, unzip this package and open a terminal inside the folder.
+
+3) Run:
+
+   git init
+   git add .
+   git commit -m "Initial HEA hardness teaching app"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/hea-hardness-class.git
+   git push -u origin main
+
+4) Go to Streamlit Community Cloud and create a new app from that repository.
+
+5) Entry point:
+
+   app.py
+
+6) In deployment advanced settings choose Python 3.13 if prompted.
+
+7) Deploy, test the public URL in a private/incognito browser, then share it with students.
+
+LOCAL TEST
+==========
+
+python -m venv .venv
+# activate the environment for your OS
+pip install -r requirements.txt
+python scripts/validate_package.py
+streamlit run app.py
