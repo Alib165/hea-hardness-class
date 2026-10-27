@@ -245,57 +245,99 @@ progress_header(st.session_state.stage)
 if st.session_state.stage == 1:
     st.markdown('<div class="stage-title">Stage 1 — Build a physical expectation</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="aim-box"><strong>Aim:</strong> test whether simple composition-derived descriptors reveal a physically meaningful difference before using ML.</div>',
+        '<div class="aim-box"><strong>Aim:</strong> use composition to calculate two simple materials descriptors — VEC and atomic-size mismatch — before seeing any hardness prediction.</div>',
         unsafe_allow_html=True,
     )
+
     st.write(
-        "Compare two equiatomic five-element alloys. Each element present is 20 at.%. The only change is **Cu → Al**. "
-        "Calculate VEC and atomic-size mismatch, δ."
+        "Compare two equiatomic five-element alloys. Each element present is **20 at.% = atomic fraction 0.20**. "
+        "The only change is **Cu → Al**. You will calculate the quantities step by step."
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Alloy C — Al omitted")
-        st.code("Co20 Cr20 Cu20 Fe20 Ni20", language=None)
-        c_vec = st.number_input("Your VEC for Alloy C", min_value=0.0, max_value=12.0, step=0.01, key="c_vec")
-        c_delta = st.number_input("Your δ (%) for Alloy C", min_value=0.0, max_value=20.0, step=0.01, key="c_delta")
-    with c2:
-        st.subheader("Alloy K — Cu omitted")
-        st.code("Al20 Co20 Cr20 Fe20 Ni20", language=None)
-        k_vec = st.number_input("Your VEC for Alloy K", min_value=0.0, max_value=12.0, step=0.01, key="k_vec")
-        k_delta = st.number_input("Your δ (%) for Alloy K", min_value=0.0, max_value=20.0, step=0.01, key="k_delta")
+    st.subheader("1. Information you need")
+    st.write("Use the following constants. Everything required for the calculation is shown here.")
+    const = pd.DataFrame(
+        {
+            "Element": ELEMENTS,
+            "VEC value": [VEC[e] for e in ELEMENTS],
+            "Atomic radius, rᵢ (pm)": [RADIUS_PM[e] for e in ELEMENTS],
+        }
+    )
+    st.dataframe(const, hide_index=True, use_container_width=True)
 
-    with st.expander("Equations and constants"):
+    e1, e2, e3 = st.columns(3)
+    with e1:
+        st.markdown("**VEC**")
         st.latex(r"VEC=\sum_i x_i VEC_i")
+        st.caption("Multiply each atomic fraction by its elemental VEC value, then add the terms.")
+    with e2:
+        st.markdown("**Mean atomic radius**")
         st.latex(r"\bar r=\sum_i x_i r_i")
+        st.caption("You need r̄ before you can calculate atomic-size mismatch.")
+    with e3:
+        st.markdown("**Atomic-size mismatch**")
         st.latex(r"\delta=100\sqrt{\sum_i x_i\left(1-\frac{r_i}{\bar r}\right)^2}")
-        const = pd.DataFrame(
-            {
-                "Element": ELEMENTS,
-                "VEC contribution": [VEC[e] for e in ELEMENTS],
-                "Atomic radius (pm)": [RADIUS_PM[e] for e in ELEMENTS],
-            }
-        )
-        st.dataframe(const, hide_index=True, use_container_width=True)
-        st.caption("Remember: 20 at.% = atomic fraction 0.20.")
+        st.caption("Use atomic fractions, not percentages, in the summation.")
+
+    st.markdown(
+        '<div class="warning-box"><strong>Worked method, not the answer:</strong> if an element is 20 at.%, use x = 0.20. For VEC, one term looks like 0.20 × VEC<sub>element</sub>. For r̄, one term looks like 0.20 × r<sub>element</sub>. Add the five terms that are present in the alloy.</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.subheader("2. Calculate Alloy C")
+    st.code("Co20 Cr20 Cu20 Fe20 Ni20", language=None)
+    st.caption("Al is absent. Co, Cr, Cu, Fe and Ni are each 20 at.% = 0.20 atomic fraction.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        c_vec = st.number_input("Alloy C: VEC", min_value=0.0, max_value=12.0, step=0.01, key="c_vec")
+    with c2:
+        c_rbar = st.number_input("Alloy C: mean radius r̄ (pm)", min_value=100.0, max_value=160.0, step=0.01, key="c_rbar")
+    with c3:
+        c_delta = st.number_input("Alloy C: δ (%)", min_value=0.0, max_value=20.0, step=0.01, key="c_delta")
+
+    st.subheader("3. Calculate Alloy K")
+    st.code("Al20 Co20 Cr20 Fe20 Ni20", language=None)
+    st.caption("Cu is absent. Al, Co, Cr, Fe and Ni are each 20 at.% = 0.20 atomic fraction.")
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        k_vec = st.number_input("Alloy K: VEC", min_value=0.0, max_value=12.0, step=0.01, key="k_vec")
+    with k2:
+        k_rbar = st.number_input("Alloy K: mean radius r̄ (pm)", min_value=100.0, max_value=160.0, step=0.01, key="k_rbar")
+    with k3:
+        k_delta = st.number_input("Alloy K: δ (%)", min_value=0.0, max_value=20.0, step=0.01, key="k_delta")
+
+    st.markdown("**Before checking:** based only on your VEC and δ values, which alloy would you expect to show greater resistance to local plastic deformation?")
+    expectation = st.radio(
+        "Your physical expectation",
+        ["Choose one…", "Alloy C", "Alloy K", "There is no reason to expect a difference"],
+        key="stage1_expectation",
+        horizontal=True,
+    )
 
     if st.button("Check my calculations", type="primary"):
         ok = (
             abs(c_vec - 8.80) <= 0.05
+            and abs(c_rbar - 126.20) <= 0.08
             and abs(c_delta - 1.27) <= 0.08
             and abs(k_vec - 7.20) <= 0.05
+            and abs(k_rbar - 129.20) <= 0.08
             and abs(k_delta - 5.44) <= 0.08
         )
-        if ok:
-            st.session_state.s1_complete = True
-            st.success("Correct. Replacing Cu with Al lowers VEC strongly and increases atomic-size mismatch strongly.")
+        if expectation == "Choose one…":
+            st.error("Make a physical expectation before checking. The point is to commit to a materials-science hypothesis before seeing hardness data.")
+        elif not ok:
+            st.error("Not quite. Check each step in order: atomic fraction → VEC; atomic fraction → mean radius r̄; then use r̄ in the δ equation.")
         else:
-            st.error("Not quite. Check that you converted at.% to atomic fraction before taking the weighted sums.")
+            st.session_state.s1_complete = True
+            st.success(
+                "Correct. Alloy C: VEC ≈ 8.80, r̄ ≈ 126.20 pm, δ ≈ 1.27%. "
+                "Alloy K: VEC ≈ 7.20, r̄ ≈ 129.20 pm, δ ≈ 5.44%."
+            )
 
     if st.session_state.s1_complete:
         st.markdown(
             """
-            <div class="takeaway"><strong>Stage 1 output:</strong> Alloy C gives VEC ≈ 8.80 and δ ≈ 1.27%; Alloy K gives VEC ≈ 7.20 and δ ≈ 5.44%. You now have a physical reason to expect different deformation resistance — but you still do not have a hardness value.</div>
+            <div class="takeaway"><strong>Stage 1 output:</strong> replacing Cu with Al lowers VEC strongly and increases atomic-size mismatch strongly. These descriptors give you a physical basis for expecting different deformation resistance, but they still do <em>not</em> calculate Vickers hardness.</div>
             """,
             unsafe_allow_html=True,
         )
@@ -467,8 +509,30 @@ elif st.session_state.stage == 5:
     feasible["Relative cost"] = teaching_cost_index(candidates).loc[feasible.index].values
     feasible["Specific hardness"] = feasible["HV"] / feasible["rho_mix_g_cm3"]
 
+    st.subheader("How the selection quantities are calculated")
+    st.write(
+        "You do not need any hidden information. The elemental constants and equations used for density and the cost index are shown below."
+    )
+    selection_constants = pd.DataFrame({
+        "Element": ELEMENTS,
+        "Atomic mass Mᵢ (g/mol)": [ATOMIC_MASS[e] for e in ELEMENTS],
+        "Element density ρᵢ (g/cm³)": [DENSITY[e] for e in ELEMENTS],
+        "Teaching cost weight Cᵢ": [COST_WEIGHT[e] for e in ELEMENTS],
+    })
+    st.dataframe(selection_constants, hide_index=True, use_container_width=True)
+
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        st.markdown("**Ideal mixture density**")
+        st.latex(r"\rho_{alloy}=\frac{\sum_i x_iM_i}{\sum_i x_iM_i/\rho_i}")
+        st.caption("xᵢ is atomic fraction, Mᵢ atomic mass, and ρᵢ elemental density.")
+    with dc2:
+        st.markdown("**Relative raw-material cost**")
+        st.latex(r"w_i=\frac{x_iM_i}{\sum_j x_jM_j},\qquad C_{raw}=\sum_i w_iC_i")
+        st.caption("Atomic fractions are first converted to mass fractions wᵢ. The displayed relative cost is then normalized to the cheapest classroom candidate.")
+
     st.markdown(
-        '<div class="warning-box"><strong>Cost note:</strong> the cost values below are a transparent teaching index (Fe=1, Al=2, Cr=2.5, Cu=8, Ni=10, Co=25), not current market prices. Their purpose is to introduce a competing objective.</div>',
+        '<div class="warning-box"><strong>Cost note:</strong> Fe=1, Al=2, Cr=2.5, Cu=8, Ni=10 and Co=25 are deliberately transparent teaching weights, not current commodity prices. The aim is to create a competing design objective, not to estimate procurement cost.</div>',
         unsafe_allow_html=True,
     )
 
