@@ -15,9 +15,9 @@ import streamlit as st
 # App configuration and constants
 # -----------------------------
 ROOT = Path(__file__).resolve().parent
-DATA_PATH = ROOT / "data" / "classroom_candidates.csv"
-FULL_DATA_PATH = ROOT / "data" / "wen_hea_hardness_155.csv"
-MODEL_PATH = ROOT / "models" / "hea_hardness_model_train140.joblib"
+DATA_PATH = ROOT / "classroom_candidates.csv"
+FULL_DATA_PATH = ROOT / "wen_hea_hardness_155.csv"
+MODEL_PATH = ROOT / "hea_hardness_model_train140.joblib"
 
 ELEMENTS = ["Al", "Co", "Cr", "Cu", "Fe", "Ni"]
 VEC = {"Al": 3.0, "Co": 9.0, "Cr": 6.0, "Cu": 11.0, "Fe": 8.0, "Ni": 10.0}
@@ -588,3 +588,4 @@ st.caption(
     "Scientific basis: Wen et al., Acta Materialia 170 (2019) 109–117, DOI 10.1016/j.actamat.2019.03.010. "
     "Independent hardness-ML study: Paturi et al., Crystals 15 (2025) 404, DOI 10.3390/cryst15050404."
 )
+
