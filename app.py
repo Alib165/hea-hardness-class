@@ -5,10 +5,10 @@ import math
 import html
 from pathlib import Path
 
-import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
+from sklearn.ensemble import ExtraTreesRegressor
 
 
 # -----------------------------
@@ -17,7 +17,6 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "classroom_candidates.csv"
 FULL_DATA_PATH = ROOT / "wen_hea_hardness_155.csv"
-MODEL_PATH = ROOT / "hea_hardness_model_train140.joblib"
 
 ELEMENTS = ["Al", "Co", "Cr", "Cu", "Fe", "Ni"]
 VEC = {"Al": 3.0, "Co": 9.0, "Cr": 6.0, "Cu": 11.0, "Fe": 8.0, "Ni": 10.0}
@@ -52,6 +51,20 @@ st.markdown(
 
 
 # -----------------------------
+# Deployment file check
+# -----------------------------
+_required_files = [DATA_PATH, FULL_DATA_PATH]
+_missing_files = [p.name for p in _required_files if not p.exists()]
+if _missing_files:
+    st.error(
+        "The app is missing required repository files: "
+        + ", ".join(f"`{name}`" for name in _missing_files)
+        + ". Put them in the same GitHub folder as `app.py`."
+    )
+    st.stop()
+
+
+# -----------------------------
 # Helpers
 # -----------------------------
 @st.cache_data
@@ -68,7 +81,50 @@ def load_full_data() -> pd.DataFrame:
 
 @st.cache_resource
 def load_model():
-    return joblib.load(MODEL_PATH)
+    """
+    Rebuild the classroom Extra Trees model from source data at app startup.
+
+    Why do this instead of loading a .joblib file?
+    ------------------------------------------------
+    Serialized scikit-learn models can be sensitive to Python / package-version
+    changes in cloud deployment. Re-training here is fast (only 140 rows) and
+    exactly reproduces the classroom model because the split and random seed
+    are fixed.
+
+    The 15 classroom candidates remain strictly held out from training.
+    """
+    full = pd.read_csv(FULL_DATA_PATH)
+    class_df = pd.read_csv(DATA_PATH)
+
+    # Prefer IDs stored in the classroom-candidate file. The fallback list is
+    # the fixed 15-candidate teaching set used when the file has no ID column.
+    fallback_holdout_ids = [154, 146, 141, 113, 111, 107, 100, 96, 85, 76, 59, 37, 14, 11, 5]
+    if "ID" in class_df.columns:
+        holdout_ids = class_df["ID"].astype(int).tolist()
+    else:
+        holdout_ids = fallback_holdout_ids
+
+    train = full.loc[~full["ID"].astype(int).isin(holdout_ids)].copy()
+
+    if len(train) != 140:
+        raise RuntimeError(
+            f"Expected 140 training samples after excluding the 15 classroom "
+            f"holdouts, but found {len(train)}."
+        )
+
+    # Normalize the small rounding deviations in reported atomic percentages.
+    X = train[ELEMENTS].div(train[ELEMENTS].sum(axis=1), axis=0).to_numpy() * 100.0
+    y = train["HV"].to_numpy(dtype=float)
+
+    model = ExtraTreesRegressor(
+        n_estimators=300,
+        max_features=1.0,
+        min_samples_leaf=1,
+        random_state=42,
+        n_jobs=-1,
+    )
+    model.fit(X, y)
+    return model
 
 
 def normalize_composition(row: pd.Series | dict) -> np.ndarray:
