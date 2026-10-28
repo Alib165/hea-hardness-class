@@ -31,6 +31,8 @@ CANDIDATE_FILENAMES = [
 ]
 
 ELEMENTS = ["Al", "Co", "Cr", "Cu", "Fe", "Ni"]
+SUPERVISOR_PREVIEW = True
+
 HARDNESS_REQUIREMENT = 450.0
 
 VEC = {"Al": 3.0, "Co": 9.0, "Cr": 6.0, "Cu": 11.0, "Fe": 8.0, "Ni": 10.0}
@@ -476,8 +478,8 @@ def initialise_state() -> None:
         "s3_complete": False,
         "s4_complete": False,
         "s5_complete": False,
-        "stage2_reveal": False,
-        "stage4_reveal": False,
+        "stage2_reveal": True,
+        "stage4_reveal": True,
         "model_runs": [],
         "scenario": None,
     }
@@ -506,6 +508,7 @@ def progress_header(stage: int) -> None:
 
 
 def stage_nav(stage: int) -> None:
+    """Free navigation for the supervisor preview build."""
     st.divider()
     c1, c2, c3 = st.columns([1, 1, 5])
     with c1:
@@ -513,9 +516,10 @@ def stage_nav(stage: int) -> None:
             go_to(stage - 1)
     with c2:
         if stage < len(STAGE_NAMES):
-            complete = bool(st.session_state.get(f"s{stage}_complete", False))
-            if st.button("Next →", disabled=not complete, use_container_width=True):
+            if st.button("Next →", use_container_width=True):
                 go_to(stage + 1)
+    with c3:
+        st.caption("Supervisor preview: completion gates are disabled, so you can inspect every stage without entering answers.")
 
 
 # ============================================================
@@ -532,11 +536,13 @@ with st.sidebar:
     st.write("**Design threshold:** 450 HV")
     st.caption("450 HV is a teaching requirement for this exercise, not a universal industry standard.")
     st.divider()
+    st.info("Supervisor preview mode: all stages are unlocked and experimental reveals are visible by default.")
     for i, (name, mins) in enumerate(zip(STAGE_NAMES, STAGE_TIMES), start=1):
-        icon = "➡️" if st.session_state.stage == i else ("✅" if st.session_state.stage > i else "🔒")
-        st.write(f"{icon} {name} — {mins}")
+        icon = "➡️" if st.session_state.stage == i else "•"
+        if st.button(f"{icon} Stage {i}: {name} — {mins}", key=f"preview_nav_{i}", use_container_width=True):
+            go_to(i)
     st.divider()
-    if st.button("Restart practical", use_container_width=True):
+    if st.button("Reset preview", use_container_width=True):
         reset_activity()
     with st.expander("Model scope"):
         st.write(
@@ -546,9 +552,10 @@ with st.sidebar:
 
 st.title("HEA hardness: physics → ML → experiment → materials selection")
 st.write(
-    "Work as a team of four. The app deliberately withholds later evidence until you have made a prediction or decision. "
-    "The purpose is to practise materials reasoning, not simply to obtain the correct number."
+    "This is the supervisor preview build of the 60-minute group practical. The student prompts, calculations, research tasks, "
+    "ML exploration and selection challenge are all preserved, but navigation gates are disabled so every stage can be inspected freely."
 )
+st.warning("Preview mode only: in the student build, later stages and experimental reveals are gated until the group completes the required tasks.")
 
 with st.expander("Team roles — read before starting", expanded=(st.session_state.stage == 1)):
     st.markdown(
