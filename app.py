@@ -68,6 +68,41 @@ st.markdown(
 .stage-title {font-size:1.5rem; font-weight:700; margin-bottom:.15rem;}
 .small-muted {font-size:.91rem; color:#5B6570;}
 div[data-testid="stMetric"] {border:1px solid #E1E5EA; padding:.65rem; border-radius:.5rem; background:#FBFCFD;}
+
+.dist-card {border:1px solid #E1E5EA; border-radius:.65rem; padding:.72rem .78rem; background:#FFFFFF; margin:.25rem 0 .65rem 0; min-height:165px;}
+.dist-head {display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.35rem;}
+.dist-element {font-size:1.08rem; font-weight:750; color:#1F2937;}
+.dist-value {font-size:.88rem; font-weight:650; color:#1F4E78;}
+.mini-hist {height:62px; display:flex; align-items:flex-end; gap:3px; padding:4px 2px 2px 2px; border-bottom:1px solid #CBD5E1; margin:.2rem 0 .35rem 0;}
+.mini-bar {flex:1; min-width:4px; background:#AFC7DD; border-radius:3px 3px 0 0;}
+.dist-stats {font-size:.78rem; color:#64748B; line-height:1.35;}
+.range-card {border:1px solid #E1E5EA; border-radius:.65rem; padding:.72rem .8rem; background:#FFFFFF; margin:.25rem 0 .65rem 0;}
+.range-head {display:flex; justify-content:space-between; align-items:center; margin-bottom:.45rem;}
+.range-element {font-size:1.05rem; font-weight:750; color:#1F2937;}
+.range-query {font-size:.95rem; font-weight:750; color:#1F4E78;}
+.range-track {position:relative; height:18px; background:#F1F5F9; border-radius:999px; overflow:visible; margin:.55rem .15rem .35rem .15rem;}
+.range-observed {position:absolute; top:6px; height:6px; background:#CBD5E1; border-radius:999px;}
+.range-typical {position:absolute; top:4px; height:10px; background:#90B6D8; border-radius:999px;}
+.range-median {position:absolute; top:1px; width:2px; height:16px; background:#334155;}
+.range-query-marker {position:absolute; top:-3px; width:4px; height:24px; background:#B42318; border-radius:3px; transform:translateX(-2px);}
+.range-axis {display:flex; justify-content:space-between; font-size:.68rem; color:#94A3B8; margin:0 .05rem;}
+.range-note {font-size:.77rem; color:#64748B; line-height:1.35; margin-top:.35rem;}
+.status-pill {display:inline-block; padding:.28rem .6rem; border-radius:999px; font-size:.78rem; font-weight:750; letter-spacing:.01em;}
+.status-low {background:#EAF7ED; color:#216E39;}
+.status-medium {background:#FFF4DB; color:#8A5A00;}
+.status-high {background:#FDECEC; color:#A61B1B;}
+.coverage-panel {border:1px solid #D8DEE6; border-radius:.8rem; padding:1rem 1.05rem; background:#FBFCFD; margin:.25rem 0 .8rem 0;}
+.coverage-title {font-size:1.08rem; font-weight:780; color:#1F2937; margin-bottom:.4rem;}
+.coverage-big {font-size:1.25rem; font-weight:800; margin:.2rem 0 .45rem 0;}
+.coverage-explain {font-size:.9rem; color:#475569; line-height:1.5;}
+.distance-track {position:relative; height:16px; background:#EEF2F6; border-radius:999px; margin:.8rem .15rem .35rem .15rem; overflow:visible;}
+.distance-safe {position:absolute; left:0; top:0; bottom:0; background:#DCEFE1; border-radius:999px 0 0 999px;}
+.distance-edge {position:absolute; top:0; bottom:0; background:#FBE7B7;}
+.distance-marker {position:absolute; top:-4px; width:4px; height:24px; background:#1F2937; border-radius:3px; transform:translateX(-2px);}
+.distance-labels {display:flex; justify-content:space-between; font-size:.72rem; color:#64748B;}
+.legend-line {display:flex; gap:.8rem; flex-wrap:wrap; font-size:.74rem; color:#64748B; margin-top:.25rem;}
+.legend-key {display:inline-flex; align-items:center; gap:.3rem;}
+.legend-swatch {width:14px; height:7px; border-radius:4px; display:inline-block;}
 </style>
 """,
     unsafe_allow_html=True,
@@ -282,46 +317,131 @@ def domain_diagnostics(comp: dict[str, float] | pd.Series) -> dict:
     }
 
 
-def composition_histogram(element: str, query_value: float | None = None) -> None:
-    train = get_training_data().copy()
-    vals = train[element].astype(float).tolist()
-    layers = [
-        {
-            "data": {"values": [{"value": float(v)} for v in vals]},
-            "mark": {"type": "bar", "opacity": 0.72},
-            "encoding": {
-                "x": {
-                    "field": "value",
-                    "type": "quantitative",
-                    "bin": {"maxbins": 12},
-                    "title": f"{element} (at.%)",
-                },
-                "y": {"aggregate": "count", "type": "quantitative", "title": "Training alloys"},
-                "tooltip": [
-                    {"field": "value", "type": "quantitative", "title": f"{element} at.%"}
-                ],
-            },
-        }
-    ]
-    if query_value is not None:
-        layers.append(
-            {
-                "data": {"values": [{"query": float(query_value)}]},
-                "mark": {"type": "rule", "strokeWidth": 4},
-                "encoding": {
-                    "x": {"field": "query", "type": "quantitative"},
-                    "tooltip": [
-                        {"field": "query", "type": "quantitative", "title": "Your alloy"}
-                    ],
-                },
-            }
-        )
-    spec = {
-        "height": 150,
-        "layer": layers,
-        "config": {"view": {"stroke": None}},
-    }
-    st.vega_lite_chart(spec, use_container_width=True)
+
+def _mini_hist_html(values: np.ndarray, bins: int = 12) -> str:
+    values = np.asarray(values, dtype=float)
+    counts, _ = np.histogram(values, bins=bins, range=(0.0, 100.0))
+    max_count = max(int(counts.max()), 1)
+    bars = []
+    for c in counts:
+        h = 8 + int(50 * float(c) / max_count)
+        bars.append(f'<span class="mini-bar" style="height:{h}px" title="{int(c)} training alloys"></span>')
+    return ''.join(bars)
+
+
+def training_distribution_card(element: str) -> None:
+    idx = ELEMENTS.index(element)
+    vals = training_matrix()[:, idx]
+    s = training_domain_summary().set_index("Element").loc[element]
+    bars = _mini_hist_html(vals, bins=12)
+    st.markdown(
+        f'''
+        <div class="dist-card">
+          <div class="dist-head">
+            <span class="dist-element">{element}</span>
+            <span class="dist-value">median {float(s['Median']):.1f} at.%</span>
+          </div>
+          <div class="mini-hist">{bars}</div>
+          <div class="range-axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100 at.%</span></div>
+          <div class="dist-stats">
+            Typical middle 90%: <strong>{float(s['5th percentile']):.1f}–{float(s['95th percentile']):.1f} at.%</strong><br>
+            Observed training range: {float(s['Min']):.1f}–{float(s['Max']):.1f} at.%
+          </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+
+def element_coverage_card(element: str, query_value: float) -> None:
+    s = training_domain_summary().set_index("Element").loc[element]
+    lo = float(s["Min"]); p5 = float(s["5th percentile"]); med = float(s["Median"])
+    p95 = float(s["95th percentile"]); hi = float(s["Max"]); val = float(query_value)
+
+    lo_p = max(0.0, min(100.0, lo)); hi_p = max(0.0, min(100.0, hi))
+    p5_p = max(0.0, min(100.0, p5)); p95_p = max(0.0, min(100.0, p95))
+    med_p = max(0.0, min(100.0, med)); val_p = max(0.0, min(100.0, val))
+
+    if val < lo - 1e-9 or val > hi + 1e-9:
+        label, cls = "outside observed range", "status-high"
+    elif val < p5 - 1e-9 or val > p95 + 1e-9:
+        label, cls = "edge of distribution", "status-medium"
+    else:
+        label, cls = "within typical range", "status-low"
+
+    st.markdown(
+        f'''
+        <div class="range-card">
+          <div class="range-head">
+            <span class="range-element">{element}</span>
+            <span class="range-query">Your alloy: {val:.1f} at.%</span>
+          </div>
+          <div><span class="status-pill {cls}">{label}</span></div>
+          <div class="range-track">
+            <span class="range-observed" style="left:{lo_p:.2f}%; width:{max(0.4, hi_p-lo_p):.2f}%"></span>
+            <span class="range-typical" style="left:{p5_p:.2f}%; width:{max(0.4, p95_p-p5_p):.2f}%"></span>
+            <span class="range-median" style="left:{med_p:.2f}%" title="Training median"></span>
+            <span class="range-query-marker" style="left:{val_p:.2f}%" title="Your alloy"></span>
+          </div>
+          <div class="range-axis"><span>0</span><span>25</span><span>50</span><span>75</span><span>100 at.%</span></div>
+          <div class="range-note">
+            Typical (5–95%): <strong>{p5:.1f}–{p95:.1f}</strong> &nbsp;·&nbsp;
+            median: {med:.1f} &nbsp;·&nbsp; observed: {lo:.1f}–{hi:.1f}
+          </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+
+def coverage_status_panel(diagnostic: dict) -> None:
+    level = diagnostic["level"]
+    pill_cls = {"low": "status-low", "medium": "status-medium", "high": "status-high"}.get(level, "status-medium")
+    concern = {"low": "Lower coverage concern", "medium": "Moderate coverage concern", "high": "High coverage concern"}.get(level, "Coverage check")
+
+    table = diagnostic["table"]
+    in_observed = int(((table["Your alloy (at.%)"] >= table["Training min"]) & (table["Your alloy (at.%)"] <= table["Training max"])).sum())
+    in_typical = int(((table["Your alloy (at.%)"] >= table["Training 5%"]) & (table["Your alloy (at.%)"] <= table["Training 95%"])) .sum())
+
+    nearest = float(diagnostic["nearest_distance"])
+    p90 = float(diagnostic["train_nn_p90"])
+    p95 = float(diagnostic["train_nn_p95"])
+    axis_max = max(p95 * 1.45, nearest * 1.15, 1.0)
+    p90_pos = min(100.0, 100.0 * p90 / axis_max)
+    p95_pos = min(100.0, 100.0 * p95 / axis_max)
+    q_pos = min(100.0, 100.0 * nearest / axis_max)
+
+    st.markdown(
+        f'''
+        <div class="coverage-panel">
+          <div class="coverage-title">Training-domain coverage</div>
+          <span class="status-pill {pill_cls}">{concern}</span>
+          <div class="coverage-big">{diagnostic['label']}</div>
+          <div class="coverage-explain">{diagnostic['explanation']}</div>
+          <div style="margin-top:.75rem; font-size:.86rem; color:#334155;">
+            <strong>Element-wise:</strong> {in_typical}/6 elements lie inside the central 5–95% training band; {in_observed}/6 lie inside the observed min–max range.
+          </div>
+          <div style="margin-top:.55rem; font-size:.86rem; color:#334155;">
+            <strong>Whole-composition:</strong> nearest training-alloy distance = {nearest:.1f}. Compare this with the training-set 90th/95th-percentile neighbour distances ({p90:.1f}/{p95:.1f}).
+          </div>
+          <div class="distance-track">
+            <span class="distance-safe" style="width:{p90_pos:.2f}%"></span>
+            <span class="distance-edge" style="left:{p90_pos:.2f}%; width:{max(0.0,p95_pos-p90_pos):.2f}%"></span>
+            <span class="distance-marker" style="left:{q_pos:.2f}%" title="Your alloy"></span>
+          </div>
+          <div class="distance-labels"><span>closer to training chemistry</span><span>more unusual →</span></div>
+          <div class="legend-line">
+            <span class="legend-key"><span class="legend-swatch" style="background:#DCEFE1"></span>usual training neighbourhood</span>
+            <span class="legend-key"><span class="legend-swatch" style="background:#FBE7B7"></span>edge region</span>
+            <span class="legend-key"><span style="display:inline-block;width:4px;height:14px;background:#1F2937;border-radius:2px"></span>your alloy</span>
+          </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "This is a training-coverage diagnostic, not a calibrated uncertainty interval. A well-covered composition can still be predicted incorrectly, and a sparse composition can still happen to be predicted well."
+    )
 
 
 def pca_domain_plot(comp: dict[str, float] | pd.Series) -> None:
@@ -330,6 +450,37 @@ def pca_domain_plot(comp: dict[str, float] | pd.Series) -> None:
     pca = PCA(n_components=2, random_state=42)
     Z = pca.fit_transform(X)
     qz = pca.transform(q.reshape(1, -1))[0]
+    explained = 100 * (pca.explained_variance_ratio_[0] + pca.explained_variance_ratio_[1])
+
+    st.markdown(
+        """
+        <div class="concept-card">
+        <b>What is PCA, in plain language?</b><br><br>
+        Each alloy is described by <b>six composition numbers</b>: Al, Co, Cr, Cu, Fe and Ni.
+        That means every alloy really lives in a six-dimensional composition space, which we cannot draw directly.
+        <br><br>
+        <b>Principal Component Analysis (PCA)</b> compresses those six composition variables into two new axes,
+        called <b>PC1</b> and <b>PC2</b>, chosen to preserve as much of the composition variation as possible.
+        You can think of it as taking the six-dimensional cloud of alloys and viewing it from a useful angle so that it fits on a 2-D page.
+        <br><br>
+        <b>Important:</b> PC1 and PC2 are mathematical combinations of Al, Co, Cr, Cu, Fe and Ni.
+        They are <b>not physical properties</b>, and neither axis means "hardness".
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("**How should you read the PCA map?**")
+    st.markdown(
+        """
+        - Each small point represents one alloy used to train the model.
+        - The large point represents **your entered alloy**.
+        - If your point sits **inside a dense region of training points**, its composition is similar to alloys the model has seen before.
+        - If it sits **far away or isolated**, the composition is more unusual, so the prediction deserves extra caution.
+        - Distance on this plot means **similarity in composition patterns**, not difference in hardness.
+        """
+    )
+
     plot_df = pd.DataFrame({"PC1": Z[:, 0], "PC2": Z[:, 1]})
     plot_df["Point"] = "Training alloy"
     plot_df["Size"] = 35
@@ -338,9 +489,11 @@ def pca_domain_plot(comp: dict[str, float] | pd.Series) -> None:
     )
     plot_df = pd.concat([plot_df, query_df], ignore_index=True)
     st.scatter_chart(plot_df, x="PC1", y="PC2", color="Point", size="Size", use_container_width=True)
-    st.caption(
-        f"PC1 + PC2 show {100*(pca.explained_variance_ratio_[0]+pca.explained_variance_ratio_[1]):.1f}% of the variation in the six composition variables. "
-        "This 2-D map is useful for intuition, but a point can look close in the projection while still being unusual in the full six-dimensional space."
+
+    st.info(
+        f"In this dataset, PC1 and PC2 together retain about {explained:.1f}% of the total variation in the six composition variables. "
+        "The remaining variation is not shown in this 2-D picture. Therefore, PCA is a visual aid for judging training-domain coverage, not a formal proof that a composition is in-distribution or out-of-distribution. "
+        "That is why the app also checks the full six-dimensional nearest-neighbour distance."
     )
 
 # ============================================================
@@ -861,8 +1014,7 @@ elif st.session_state.stage == 3:
         rows = [st.columns(3), st.columns(3)]
         for idx, e in enumerate(ELEMENTS):
             with rows[idx // 3][idx % 3]:
-                st.markdown(f"**{e} in training data**")
-                composition_histogram(e)
+                training_distribution_card(e)
 
     with range_tab:
         domain_summary = training_domain_summary()
@@ -948,28 +1100,25 @@ elif st.session_state.stage == 3:
         diagnostic = domain_diagnostics(entered)
         norm = diagnostic["query"]
 
-        q1, q2 = st.columns([1, 1])
-        with q1:
-            st.markdown("**Where does your alloy sit in each elemental distribution?**")
-            mini_cols = [st.columns(3), st.columns(3)]
-            for idx, e in enumerate(ELEMENTS):
-                with mini_cols[idx // 3][idx % 3]:
-                    composition_histogram(e, norm[idx])
-        with q2:
-            st.markdown("**Six-dimensional composition map (2-D PCA view)**")
-            pca_domain_plot(entered)
+        st.markdown("### Training-domain check for your alloy")
+        coverage_status_panel(diagnostic)
 
-        st.markdown("**Coverage diagnostic**")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Coverage flag", diagnostic["label"])
-        c2.metric("Nearest training-alloy distance", f"{diagnostic['nearest_distance']:.1f}")
-        c3.metric("95th percentile training NN distance", f"{diagnostic['train_nn_p95']:.1f}")
-        st.write(diagnostic["explanation"])
+        st.markdown("#### 1. Element-by-element coverage")
         st.caption(
-            "Distance is Euclidean distance in normalized six-element at.% space. This is a classroom coverage diagnostic, **not** a calibrated prediction interval or formal OOD detector."
+            "The pale bar is the full observed training range, the darker band is the central 5–95% of the training data, the thin dark line is the training median, and the red marker is your alloy."
         )
+        mini_cols = [st.columns(3), st.columns(3)]
+        for idx, e in enumerate(ELEMENTS):
+            with mini_cols[idx // 3][idx % 3]:
+                element_coverage_card(e, norm[idx])
 
-        with st.expander("Show exact comparison with training ranges"):
+        st.markdown("#### 2. Whole-composition view")
+        st.write(
+            "Element-by-element checks are not enough: a combination can be unusual even when every individual element lies inside its observed range. The PCA view gives a visual projection of the six-dimensional chemistry."
+        )
+        pca_domain_plot(entered)
+
+        with st.expander("Show exact numerical comparison with the training ranges"):
             st.dataframe(
                 diagnostic["table"].style.format({c: "{:.1f}" for c in diagnostic["table"].columns if c != "Element"}),
                 hide_index=True,
