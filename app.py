@@ -31,8 +31,6 @@ CANDIDATE_FILENAMES = [
 ]
 
 ELEMENTS = ["Al", "Co", "Cr", "Cu", "Fe", "Ni"]
-SUPERVISOR_PREVIEW = True
-
 HARDNESS_REQUIREMENT = 450.0
 
 VEC = {"Al": 3.0, "Co": 9.0, "Cr": 6.0, "Cu": 11.0, "Fe": 8.0, "Ni": 10.0}
@@ -315,6 +313,20 @@ def domain_diagnostics(comp: dict[str, float] | pd.Series) -> dict:
         "table": pd.DataFrame(rows),
         "query": q,
     }
+
+
+def nearest_training_examples(comp: dict[str, float] | pd.Series, k: int = 5) -> pd.DataFrame:
+    """Return the k compositionally nearest training alloys in six-dimensional at.% space."""
+    q = normalize_for_model(comp)
+    train = get_training_data().copy()
+    X = train[ELEMENTS].div(train[ELEMENTS].sum(axis=1), axis=0).to_numpy(dtype=float) * 100.0
+    distances = np.sqrt(((X - q[None, :]) ** 2).sum(axis=1))
+    idx = np.argsort(distances)[:k]
+
+    out = train.iloc[idx][["ID"] + ELEMENTS + ["HV"]].copy()
+    out["Distance"] = distances[idx]
+    out = out.rename(columns={"HV": "Experimental HV"})
+    return out.reset_index(drop=True)
 
 
 
@@ -661,7 +673,6 @@ def progress_header(stage: int) -> None:
 
 
 def stage_nav(stage: int) -> None:
-    """Free navigation for the supervisor preview build."""
     st.divider()
     c1, c2, c3 = st.columns([1, 1, 5])
     with c1:
@@ -671,8 +682,6 @@ def stage_nav(stage: int) -> None:
         if stage < len(STAGE_NAMES):
             if st.button("Next →", use_container_width=True):
                 go_to(stage + 1)
-    with c3:
-        st.caption("Supervisor preview: completion gates are disabled, so you can inspect every stage without entering answers.")
 
 
 # ============================================================
@@ -689,13 +698,16 @@ with st.sidebar:
     st.write("**Design threshold:** 450 HV")
     st.caption("450 HV is a teaching requirement for this exercise, not a universal industry standard.")
     st.divider()
-    st.info("Supervisor preview mode: all stages are unlocked and experimental reveals are visible by default.")
+    st.caption("Supervisor preview: all stages are freely accessible.")
     for i, (name, mins) in enumerate(zip(STAGE_NAMES, STAGE_TIMES), start=1):
-        icon = "➡️" if st.session_state.stage == i else "•"
-        if st.button(f"{icon} Stage {i}: {name} — {mins}", key=f"preview_nav_{i}", use_container_width=True):
+        if st.button(
+            f"{'➡️ ' if st.session_state.stage == i else ''}{name} — {mins}",
+            key=f"preview_stage_{i}",
+            use_container_width=True,
+        ):
             go_to(i)
     st.divider()
-    if st.button("Reset preview", use_container_width=True):
+    if st.button("Restart practical", use_container_width=True):
         reset_activity()
     with st.expander("Model scope"):
         st.write(
@@ -704,11 +716,14 @@ with st.sidebar:
         )
 
 st.title("HEA hardness: physics → ML → experiment → materials selection")
-st.write(
-    "This is the supervisor preview build of the 60-minute group practical. The student prompts, calculations, research tasks, "
-    "ML exploration and selection challenge are all preserved, but navigation gates are disabled so every stage can be inspected freely."
+st.info(
+    "SUPERVISOR PREVIEW MODE — all stages can be opened directly and Next is always available. "
+    "Student prompts remain visible, but you do not need to complete them to inspect the app."
 )
-st.warning("Preview mode only: in the student build, later stages and experimental reveals are gated until the group completes the required tasks.")
+st.write(
+    "This preview shows the same teaching content as the student build, including the physical reasoning, "
+    "interactive ML/OOD investigation, experimental error-detective activity, and final materials-selection challenge."
+)
 
 with st.expander("Team roles — read before starting", expanded=(st.session_state.stage == 1)):
     st.markdown(
@@ -1232,9 +1247,10 @@ elif st.session_state.stage == 3:
         "Should every predicted PASS be trusted equally?",
         [
             "Choose one…",
-            "Yes — if the predicted hardness is above 450 HV, the prediction is equally trustworthy.",
+            "Yes — once the predicted hardness is above 450 HV, the prediction should be treated as reliable.",
             "No — only predictions close to 450 HV are risky; a prediction far above 450 HV is automatically reliable.",
-            "No — trust depends on BOTH decision margin and training-domain coverage. A prediction far above 450 HV can still be unreliable if the composition is outside or sparsely represented in the training data.",
+            "No — any prediction inside the training domain is automatically reliable, regardless of model error or decision margin.",
+            "No definitive reliability conclusion can be made from the predicted hardness alone. We must also consider decision margin, training-data coverage, and the model's typical error; even a prediction far above 450 HV can be weakly supported if the composition is out-of-distribution.",
         ],
         key="s3_trust",
     )
@@ -1259,10 +1275,10 @@ elif st.session_state.stage == 3:
             st.error("A numerical prediction can still be weakly supported if the input chemistry is outside the model's training domain.")
         elif not model_interpretation.startswith("The model has learned"):
             st.error("Distinguish predictive association from proof of physical mechanism.")
-        elif not trust.startswith("No — trust depends on BOTH"):
+        elif not trust.startswith("No definitive reliability conclusion"):
             st.error(
-                "Consider two independent risks: closeness to the 450-HV decision boundary and whether the composition is well represented in the training domain. "
-                "Even a high predicted hardness can be weakly supported for an out-of-distribution composition."
+                "The predicted hardness alone is not enough to establish reliability. Consider decision margin, training-data coverage, and typical model error. "
+                "Even a value far above 450 HV can be weakly supported when the chemistry is unfamiliar to the model."
             )
         elif set(risky) != {"H", "I"}:
             st.error("Look for the two predicted passes closest to 450 HV.")
@@ -1270,20 +1286,20 @@ elif st.session_state.stage == 3:
             st.session_state.s3_complete = True
             st.success("Stage 3 complete.")
             st.markdown(
-                '<div class="takeaway"><strong>Core intuition:</strong> before trusting any ML number, ask two questions: <strong>(1) how far is the prediction from the engineering decision boundary?</strong> and <strong>(2) how well is this input represented by the model\'s training data?</strong> A model can produce a precise-looking number even when the chemistry is unfamiliar.</div>',
+                '<div class="takeaway"><strong>Core intuition:</strong> the predicted hardness by itself does not tell you how trustworthy the prediction is. Ask: <strong>(1) how far is it from the engineering decision boundary?</strong> <strong>(2) how well is the chemistry represented in training?</strong> and <strong>(3) what size of error does the model normally make?</strong> A high predicted value can still be weakly supported.</div>',
                 unsafe_allow_html=True,
             )
 
     stage_nav(3)
 
 # ============================================================
-# STAGE 4 — EXPERIMENTAL VALIDATION
+# STAGE 4 — EXPERIMENTAL VALIDATION + ERROR DETECTIVE
 # ============================================================
 
 elif st.session_state.stage == 4:
     st.markdown('<div class="stage-title">Stage 4 — Challenge the model with experiment</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="aim-box"><strong>Aim:</strong> test whether the ML-based engineering decisions survive contact with real experimental measurements, and explain why a strong average model can still fail on an individual material.</div>',
+        '<div class="aim-box"><strong>Aim:</strong> test whether the ML-based engineering decisions survive real measurements, then diagnose <em>why different prediction errors can arise for different reasons</em>.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1305,9 +1321,19 @@ elif st.session_state.stage == 4:
         out["ML decision"] = np.where(out["ML HV"] >= HARDNESS_REQUIREMENT, "PASS", "Fail")
         out["Experimental decision"] = np.where(out["HV"] >= HARDNESS_REQUIREMENT, "PASS", "Fail")
         out["Error (ML − exp.)"] = out["ML HV"] - out["HV"]
+        out["Absolute error"] = np.abs(out["Error (ML − exp.)"])
         out = out.rename(columns={"HV": "Experimental HV"})
+
+        st.subheader("1 · What happened when experiment arrived?")
         st.dataframe(
-            out.style.format({"ML HV": "{:.0f}", "Experimental HV": "{:.0f}", "Error (ML − exp.)": "{:+.0f}"}),
+            out.style.format(
+                {
+                    "ML HV": "{:.0f}",
+                    "Experimental HV": "{:.0f}",
+                    "Error (ML − exp.)": "{:+.0f}",
+                    "Absolute error": "{:.0f}",
+                }
+            ),
             hide_index=True,
             use_container_width=True,
         )
@@ -1323,6 +1349,7 @@ elif st.session_state.stage == 4:
             default="Other",
         )
         plot_values = plot[["Candidate", "ML HV", "Experimental HV", "Outcome"]].to_dict(orient="records")
+
         st.markdown("**Prediction versus experiment**")
         st.vega_lite_chart(
             {
@@ -1330,7 +1357,7 @@ elif st.session_state.stage == 4:
                 "data": {"values": plot_values},
                 "layer": [
                     {
-                        "mark": {"type": "point", "filled": True, "size": 110},
+                        "mark": {"type": "point", "filled": True, "size": 115},
                         "encoding": {
                             "x": {"field": "ML HV", "type": "quantitative", "title": "ML prediction (HV)"},
                             "y": {"field": "Experimental HV", "type": "quantitative", "title": "Experimental hardness (HV)"},
@@ -1357,7 +1384,10 @@ elif st.session_state.stage == 4:
             },
             use_container_width=True,
         )
-        st.caption("The dashed lines mark 450 HV. The lower-right quadrant contains false passes: ML predicts PASS, but experiment says Fail.")
+        st.caption(
+            "The dashed lines mark 450 HV. The lower-right quadrant contains false passes: "
+            "the model predicts PASS, but experiment says Fail."
+        )
 
         false_pass = st.multiselect(
             "Which candidates are FALSE PASSES — ML says PASS, experiment says Fail?",
@@ -1366,27 +1396,217 @@ elif st.session_state.stage == 4:
             key="s4_false",
         )
 
-        failure_reason = st.multiselect(
-            "Which statements are reasonable explanations for why a composition-only model can miss an individual alloy?",
+        st.subheader("2 · Error detective — four students, four different cases")
+        st.markdown(
+            '<div class="role-box"><strong>Split the cases:</strong> Student A investigates <strong>H</strong> · '
+            'Student B investigates <strong>I</strong> · Student C investigates <strong>O</strong> · '
+            'Student D investigates <strong>F</strong>. Spend 2–3 minutes on your case, then report back to the group. '
+            'Do not assume that every large error has the same cause.</div>',
+            unsafe_allow_html=True,
+        )
+        st.write(
+            "For each case, the app shows (i) prediction error, (ii) whether its composition is familiar to the model, "
+            "and (iii) the five nearest training alloys in the full six-element composition space. "
+            "**Nearest** here means smallest Euclidean distance in Al–Co–Cr–Cu–Fe–Ni at.% space."
+        )
+
+        case_descriptions = {
+            "H": {
+                "title": "H — large overprediction despite familiar chemistry",
+                "prompt": (
+                    "H is useful because a simple 'it was OOD' explanation does not work well. "
+                    "Ask: if nominal composition is reasonably familiar, why can nearby compositions still have very different hardness?"
+                ),
+            },
+            "I": {
+                "title": "I — a moderate numerical error that changes the engineering decision",
+                "prompt": (
+                    "I demonstrates that error size and engineering consequence are not the same thing. "
+                    "Ask: how can an error of only a few tens of HV turn a predicted PASS into an experimental FAIL?"
+                ),
+            },
+            "O": {
+                "title": "O — well-covered chemistry, but the experiment reaches a harder extreme",
+                "prompt": (
+                    "O asks you to think about prediction at the high end of the property range. "
+                    "Ask: can an in-distribution composition still have a response beyond what its nearest training examples suggest?"
+                ),
+            },
+            "F": {
+                "title": "F — unusual chemistry, yet a small prediction error",
+                "prompt": (
+                    "F prevents a different oversimplification. "
+                    "Ask: does being outside or near the edge of the training domain guarantee a bad prediction?"
+                ),
+            },
+        }
+
+        tabs = st.tabs([case_descriptions[c]["title"] for c in ["H", "I", "O", "F"]])
+
+        for tab, cand_name in zip(tabs, ["H", "I", "O", "F"]):
+            with tab:
+                row = pred.loc[pred["Candidate"] == cand_name].iloc[0]
+                diag = domain_diagnostics(row)
+                neigh = nearest_training_examples(row, k=5)
+                signed_error = float(row["ML HV"] - row["HV"])
+                abs_error = abs(signed_error)
+                local_min = float(neigh["Experimental HV"].min())
+                local_max = float(neigh["Experimental HV"].max())
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("ML prediction", f"{float(row['ML HV']):.0f} HV")
+                m2.metric("Experiment", f"{float(row['HV']):.0f} HV")
+                m3.metric("Prediction error", f"{signed_error:+.0f} HV")
+                m4.metric("Coverage", diag["label"])
+
+                st.info(case_descriptions[cand_name]["prompt"])
+
+                st.markdown("**Five nearest training alloys by nominal composition**")
+                st.dataframe(
+                    neigh.style.format(
+                        {
+                            "Al": "{:.1f}",
+                            "Co": "{:.1f}",
+                            "Cr": "{:.1f}",
+                            "Cu": "{:.1f}",
+                            "Fe": "{:.1f}",
+                            "Ni": "{:.1f}",
+                            "Experimental HV": "{:.0f}",
+                            "Distance": "{:.2f}",
+                        }
+                    ),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+                st.caption(
+                    f"The five neighbours span {local_min:.0f}–{local_max:.0f} HV. "
+                    "Compositionally nearby does not necessarily mean identical microstructure or identical hardness."
+                )
+
+                if cand_name == "H":
+                    st.markdown(
+                        '<div class="takeaway"><strong>Evidence to discuss:</strong> H is classified as reasonably well covered, '
+                        'yet its error is large and its nearby training alloys span a wide hardness range. '
+                        'So OOD alone cannot explain the miss. A plausible interpretation is that nominal composition does not uniquely encode '
+                        'all hardness-controlling information—phase constitution/fractions, ordering, segregation, grain structure, defects or processing-linked microstructure may differ. '
+                        '<strong>This is a hypothesis from the evidence, not proof of which hidden variable caused H.</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif cand_name == "I":
+                    st.markdown(
+                        '<div class="takeaway"><strong>Evidence to discuss:</strong> I is only moderately mispredicted numerically, '
+                        'but the error crosses the 450-HV specification. This is a decision-boundary problem: '
+                        '<strong>a modest regression error can become a serious engineering classification error when the prediction is close to the requirement.</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                elif cand_name == "O":
+                    st.markdown(
+                        '<div class="takeaway"><strong>Evidence to discuss:</strong> O is not obviously OOD, yet its experimental hardness lies above its nearest training examples. '
+                        'Extra Trees predictions are built from averages of observed training responses in tree leaves, so the prediction remains anchored to hardness values represented in the training data rather than discovering a new physical extrapolation. '
+                        '<strong>In-distribution does not mean exact, and a model can underpredict an unusually strong response.</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        '<div class="takeaway"><strong>Evidence to discuss:</strong> F is compositionally unusual by the coverage diagnostic, '
+                        'yet its numerical prediction error is small. Therefore <strong>OOD is a risk flag, not a guarantee of failure</strong>. '
+                        'Coverage tells us when extra caution is warranted; it does not deterministically predict the error of every individual sample.</div>',
+                        unsafe_allow_html=True,
+                    )
+
+        st.subheader("3 · Group synthesis — match the evidence to the lesson")
+
+        h_lesson = st.radio(
+            "Case H: what is the strongest conclusion supported by the evidence?",
             [
-                "The training set is finite, so the learned mapping is imperfect.",
-                "Microstructure, phase fractions, defects and processing history are not explicitly supplied to the model.",
-                "Experimental measurements and materials can contain variability/noise.",
-                "A high R² mathematically guarantees every individual prediction is correct.",
+                "Choose one…",
+                "H proves that OOD chemistry is the cause of every large model error.",
+                "A large error can occur even for familiar nominal chemistry; nearby alloys can have widely different hardness, suggesting that composition alone may omit important hardness-controlling information.",
+                "Because H is in-domain, its experimental measurement must be wrong.",
             ],
-            key="s4_reasons",
+            key="s4_h_lesson",
+        )
+
+        i_lesson = st.radio(
+            "Case I: what is the main engineering lesson?",
+            [
+                "Choose one…",
+                "Only very large numerical errors matter.",
+                "A moderate numerical error can be decision-critical when the prediction lies near the 450-HV requirement.",
+                "Any prediction above 450 HV should automatically be accepted.",
+            ],
+            key="s4_i_lesson",
+        )
+
+        o_lesson = st.radio(
+            "Case O: what does this case show?",
+            [
+                "Choose one…",
+                "Being well represented by the training compositions guarantees a small property error.",
+                "An in-domain composition can still be underpredicted, particularly when the real response is more extreme than nearby observed training responses.",
+                "PCA distance is a direct hardness equation.",
+            ],
+            key="s4_o_lesson",
+        )
+
+        f_lesson = st.radio(
+            "Case F: what does this case show about OOD diagnostics?",
+            [
+                "Choose one…",
+                "OOD or sparse coverage is a warning about reliability, not a guarantee that the prediction will be wrong.",
+                "Every OOD prediction must have a large error.",
+                "Training-domain coverage is irrelevant and should never be checked.",
+            ],
+            key="s4_f_lesson",
+        )
+
+        missing_info = st.multiselect(
+            "Which types of information could plausibly affect hardness but are NOT explicitly supplied to this composition-only model?",
+            [
+                "Phase constitution and phase fractions",
+                "Chemical ordering / precipitates",
+                "Grain size and morphology",
+                "Segregation and local chemical heterogeneity",
+                "Defects and processing-linked microstructure",
+                "Experimental/material variability",
+                "The candidate letter (A, B, C, …)",
+            ],
+            key="s4_missing_info",
+        )
+
+        reflection = st.text_area(
+            "Group conclusion (3–5 sentences): Why can no single explanation account for every prediction error? Use at least TWO of H, I, O or F as evidence.",
+            key="s4_reflection",
+            height=125,
+            placeholder=(
+                "For example: H shows that ... whereas F shows that ... . "
+                "Therefore training-domain distance is useful because ..., but it cannot by itself ..."
+            ),
         )
 
         if st.button("Complete Stage 4"):
-            desired = {
-                "The training set is finite, so the learned mapping is imperfect.",
-                "Microstructure, phase fractions, defects and processing history are not explicitly supplied to the model.",
-                "Experimental measurements and materials can contain variability/noise.",
+            desired_missing = {
+                "Phase constitution and phase fractions",
+                "Chemical ordering / precipitates",
+                "Grain size and morphology",
+                "Segregation and local chemical heterogeneity",
+                "Defects and processing-linked microstructure",
+                "Experimental/material variability",
             }
             if set(false_pass) != {"H", "I"}:
                 st.error("Identify the two predicted passes whose experimental hardness is below 450 HV.")
-            elif set(failure_reason) != desired:
-                st.error("Choose the three scientifically defensible limitations, but not the statement claiming R² guarantees every prediction.")
+            elif not h_lesson.startswith("A large error can occur"):
+                st.error("For H, use the coverage and neighbour evidence: a large miss occurs even though the nominal chemistry is not obviously OOD.")
+            elif not i_lesson.startswith("A moderate numerical error"):
+                st.error("For I, focus on the consequence of crossing the 450-HV decision boundary.")
+            elif not o_lesson.startswith("An in-domain composition"):
+                st.error("For O, distinguish being in-domain from being guaranteed accurate.")
+            elif not f_lesson.startswith("OOD or sparse coverage"):
+                st.error("For F, remember that OOD is a risk warning, not a deterministic error detector.")
+            elif set(missing_info) != desired_missing:
+                st.error("Select the physically plausible missing information, but not the candidate letter.")
+            elif len(reflection.strip()) < 100:
+                st.error("Write a short group synthesis using at least two of the four cases as evidence.")
             else:
                 st.session_state.s4_complete = True
                 st.success("Stage 4 complete.")
@@ -1395,11 +1615,14 @@ elif st.session_state.stage == 4:
                 v2.metric("15-alloy RMSE", "37.7 HV")
                 v3.metric("15-alloy R²", "0.962")
                 st.markdown(
-                    '<div class="takeaway"><strong>Core intuition:</strong> strong average predictive statistics and safe individual engineering decisions are not the same thing. Experiment remains the reference, especially near decision boundaries and when the model does not observe all physically important variables.</div>',
+                    '<div class="takeaway"><strong>Core intuition:</strong> prediction error is not one phenomenon with one cause. '
+                    'Coverage, decision margin, local ambiguity, missing physical variables, model structure and experimental variability can matter in different ways. '
+                    'A strong average R² therefore does not guarantee a safe individual engineering decision.</div>',
                     unsafe_allow_html=True,
                 )
 
     stage_nav(4)
+
 
 # ============================================================
 # STAGE 5 — RICH MATERIALS-SELECTION CHALLENGE
