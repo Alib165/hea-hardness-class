@@ -1654,31 +1654,63 @@ elif st.session_state.stage == 5:
     feasible = add_selection_metrics(feasible, candidates)
 
     st.subheader("A. Feasibility and selection metrics")
-    st.markdown(
-        r"""
-**Experimental hardness** is the gate: a material below 450 HV is infeasible.
 
-**Hardness margin** measures robustness above the requirement:
-
-\[
-\text{margin}=HV_{exp}-450
-\]
-
-**Density** matters when component mass matters. We estimate ideal mixture density using:
-
-\[
-\rho_{alloy}=\frac{\sum_i x_iM_i}{\sum_i x_iM_i/\rho_i}
-\]
-
-**Specific hardness** is a simple classroom comparison of hardness relative to density:
-
-\[
-\frac{HV}{\rho}
-\]
-
-**Relative cost** is a transparent teaching index based on elemental mass fractions and fixed teaching weights. It is **not a live market-price estimate**.
-"""
+    st.info(
+        "**First screen:** experimental hardness is the gate. "
+        "Any material with experimental hardness below 450 HV is infeasible for this design brief."
     )
+
+    with st.container(border=True):
+        st.markdown("#### 1. Hardness margin")
+        st.write(
+            "Hardness margin tells us **how far above the minimum requirement** a material sits. "
+            "A larger positive margin gives more performance headroom."
+        )
+        st.latex(r"\mathrm{Hardness\ margin}=HV_{\mathrm{exp}}-450")
+        st.caption(
+            "Example: 573 HV gives a +123 HV margin. A material at 475 HV passes, "
+            "but has only +25 HV of headroom."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 2. Estimated alloy density")
+        st.write(
+            "Density matters when the mass of the component matters. "
+            "We estimate an ideal mixture density from the elemental atomic fractions, "
+            "atomic masses, and elemental densities."
+        )
+        st.latex(
+            r"\rho_{\mathrm{alloy}}="
+            r"\frac{\sum_i x_i M_i}"
+            r"{\sum_i \left(x_i M_i/\rho_i\right)}"
+        )
+        st.caption(
+            "Here, xᵢ is atomic fraction, Mᵢ is atomic mass, and ρᵢ is the density of element i. "
+            "Lower alloy density is attractive when lightweight design matters."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 3. Specific hardness")
+        st.write(
+            "Specific hardness compares hardness with density. "
+            "It helps answer: **how much hardness do we obtain for a given material density?**"
+        )
+        st.latex(r"\mathrm{Specific\ hardness}=\frac{HV}{\rho_{\mathrm{alloy}}}")
+        st.caption(
+            "A larger value means greater hardness relative to density. "
+            "This is a simple classroom selection metric, not a universal design index."
+        )
+
+    with st.container(border=True):
+        st.markdown("#### 4. Relative material cost")
+        st.write(
+            "Relative cost is a transparent teaching index based on elemental mass fractions "
+            "and fixed classroom cost weights. It creates a genuine trade-off with performance."
+        )
+        st.warning(
+            "The cost index is **not a live market-price estimate**. "
+            "It is used only to practise multi-objective materials selection."
+        )
 
     const = pd.DataFrame(
         {
