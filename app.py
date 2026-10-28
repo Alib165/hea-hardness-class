@@ -1083,8 +1083,9 @@ elif st.session_state.stage == 3:
         "Should every predicted PASS be trusted equally?",
         [
             "Choose one…",
-            "Yes — a PASS is a PASS.",
-            "No — predictions close to 450 HV are riskier because ordinary model error can change the engineering decision.",
+            "Yes — if the predicted hardness is above 450 HV, the prediction is equally trustworthy.",
+            "No — only predictions close to 450 HV are risky; a prediction far above 450 HV is automatically reliable.",
+            "No — trust depends on BOTH decision margin and training-domain coverage. A prediction far above 450 HV can still be unreliable if the composition is outside or sparsely represented in the training data.",
         ],
         key="s3_trust",
     )
@@ -1109,8 +1110,11 @@ elif st.session_state.stage == 3:
             st.error("A numerical prediction can still be weakly supported if the input chemistry is outside the model's training domain.")
         elif not model_interpretation.startswith("The model has learned"):
             st.error("Distinguish predictive association from proof of physical mechanism.")
-        elif not trust.startswith("No —"):
-            st.error("Prediction margin matters near a pass/fail boundary.")
+        elif not trust.startswith("No — trust depends on BOTH"):
+            st.error(
+                "Consider two independent risks: closeness to the 450-HV decision boundary and whether the composition is well represented in the training domain. "
+                "Even a high predicted hardness can be weakly supported for an out-of-distribution composition."
+            )
         elif set(risky) != {"H", "I"}:
             st.error("Look for the two predicted passes closest to 450 HV.")
         else:
